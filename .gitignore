@@ -1,0 +1,7 @@
+.idea/
+db_repository/
+flask/
+.dump
+*.*.swp
+*.db
+*.pyc
