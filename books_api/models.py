@@ -3,6 +3,10 @@ import sys
 from books_api import db
 from books_api import app
 
+# TODO: what is the best way to model this instead of strings?
+
+# TODO: split out some of this logic?
+
 account_types = [
     "credit card",
     "checking",
@@ -14,8 +18,30 @@ transaction_types = [
     "credit"
 ]
 
+# TODO: better exception handling capabilities
+
+class GenericAccountingException(Exception):
+    pass
+
+
+class CategoryException(GenericAccountingException):
+    pass
+
+
+class CategoryNotFoundException(CategoryException):
+    pass
+
+
+class AccountsException(GenericAccountingException):
+    pass
+
+
+class TransactionException(GenericAccountingException):
+    pass
+
 
 # todo: determine how to get categories
+# todo: possible allow no categoies (none)
 class Category(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     category = db.Column(db.String(64), unique=True)
@@ -70,7 +96,10 @@ class Account(db.Model):
 
     @staticmethod
     def add_account(description, type):
+        type = type.lower()
         if not description or type not in account_types:
+            print("Error: empty description or '{}' not in '{}'".format(type, account_types))
+            # TODO how to add account types?
             # TODO raise exception
             return None
 
@@ -85,9 +114,31 @@ class Account(db.Model):
 
     @staticmethod
     def get_by_name(name):
+        # TODO: what if it doesn't exist?  Return None or throw exception?
         return Account.query.filter_by(description=name).first()
 
+    @staticmethod
+    def get_by_id(id):
+        return Account.query.filter_by(id=id).first()
+
+    def __update_balance_by(self, amount, transaction_type):
+        # TODO ensure this is OK
+        self.balance = self.balance + amount if transaction_type == "credit"\
+            else self.balance - amount
+
+        db.session.commit()
+
     def add_transaction(self, date, description, amount, type, category):
+        # TODO: how to ensure data is a datetime object, or ensure it can be?
+        """
+        :param date: Datetime object
+        :param description: Description of transaction
+        :param amount: amount of transaction in cents
+        :param type: Type of transaction
+        :param category: Transaction category
+        :return: Transaction added
+        """
+        amount = int(amount)
         new_transaction = Transaction(
             account_id=self.id,
             description=description,
@@ -97,16 +148,25 @@ class Account(db.Model):
             category=category
         )
 
+        # TODO: add update to balance?
         db.session.add(new_transaction)
         db.session.commit()
 
-    def get_transactions(self, number_of_results=10):
-        # TODO: allow options here
+        self.__update_balance_by(amount, type)
+        # TODO: catch exception
+        return new_transaction
+
+    def get_transactions(self):
+        # TODO: allow filtering options here
         return Transaction.query \
             .filter_by(account_id=self.id) \
             .order_by(Transaction.date.desc()) \
-            .limit(number_of_results) \
             .all()
+
+    def __repr__(self):
+        return "<Account id: {}, description: '{}', balance: {}, type: {} >".format(
+            self.id, self.description, self.balance, self.type
+        )
 
 
 class Transaction(db.Model):
@@ -122,7 +182,7 @@ class Transaction(db.Model):
 
     def __repr__(self):
         return "<Transaction id: {}, account_id: {}, description: '{}'," \
-               "amount: {}, type: {}, category: {}, date:{}".format(
+               "amount: {}, type: {}, category: {}, date: {} >".format(
             self.id,
             self.account_id,
             self.description,
