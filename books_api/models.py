@@ -32,7 +32,7 @@ class CategoryNotFoundException(CategoryException):
     pass
 
 
-class AccountsException(GenericAccountingException):
+class AccountException(GenericAccountingException):
     pass
 
 
@@ -139,7 +139,7 @@ class Account(db.Model):
         :return: Transaction added
         """
         amount = int(amount)
-        new_transaction = Transaction(
+        new_transaction = Transaction.add_transaction(
             account_id=self.id,
             description=description,
             amount=amount,
@@ -148,12 +148,9 @@ class Account(db.Model):
             category=category
         )
 
-        # TODO: add update to balance?
-        db.session.add(new_transaction)
-        db.session.commit()
-
         self.__update_balance_by(amount, type)
-        # TODO: catch exception
+
+        # TODO-ASAP: catch exception & roll back if needed
         return new_transaction
 
     def get_transactions(self):
@@ -162,6 +159,30 @@ class Account(db.Model):
             .filter_by(account_id=self.id) \
             .order_by(Transaction.date.desc()) \
             .all()
+
+    def remove_transaction(self, transaction):
+        """
+        Roll back transaction for this account.
+        :param transaction: Valid transaction object w/ id.
+        :return: Raise Exception if id isn't found for this account.
+        """
+        # Check that transaction still exists.
+        record_list = Transaction.get_transactions(transaction_id=transaction.id)
+        if not record_list:
+            raise AccountException("Transaction does not exist.")
+
+        record = record_list.pop()
+
+        # TODO: how to guarantee that transaction is the correct object
+        if record.account_id != self.id:
+            raise AccountException("Transaction {} not found for this account {}".format(
+                record, self
+            ))
+
+        self.__update_balance_by(-record.amount, record.type)
+
+        # Todo: catch exception
+        record.remove()
 
     def __repr__(self):
         return "<Account id: {}, description: '{}', balance: {}, type: {} >".format(
@@ -179,6 +200,50 @@ class Transaction(db.Model):
 
     category = db.Column(db.String(64), db.ForeignKey('category.category'))
     date = db.Column(db.Date, nullable=False)
+
+    @staticmethod
+    def add_transaction(account_id, description, date, amount, type, category):
+        new_transaction = Transaction(
+            account_id=account_id,
+            description=description,
+            amount=amount,
+            type=type,
+            date=date,
+            category=category
+        )
+
+        db.session.add(new_transaction)
+        db.session.commit()
+        # TODO: catch exception
+        return new_transaction
+
+    @staticmethod
+    def get_transactions(transaction_id=None,
+                         account_id=None, description=None,
+                         amount=None, date=None, type=None, category=None):
+        # TODO: clean this mess up
+        t = Transaction.query
+        if transaction_id:
+            t = t.filter_by(id=transaction_id)
+        if account_id:
+            t = t.filter_by(account_id=account_id)
+        if description:
+            t = t.filter_by(description=description)
+        if date:
+            t = t.filter_by(date=date)
+        if type:
+            t = t.filter_by(type=type)
+        if amount:
+            t = t.filter_by(amount=amount)
+        if category:
+            t = t.filter_by(category=category)
+
+        return t.order_by(Transaction.date.desc()).all()
+
+    def remove(self):
+        db.session.delete(self)
+        db.session.commit()
+
 
     def __repr__(self):
         return "<Transaction id: {}, account_id: {}, description: '{}'," \

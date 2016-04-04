@@ -7,7 +7,7 @@ import unittest
 import sqlalchemy.exc as db_exceptions
 
 from books_api import app, db
-from books_api.models import Category, Account, Transaction
+from books_api.models import Category, Account, Transaction, AccountException
 from public_config import basedir
 
 
@@ -308,8 +308,64 @@ class AccountModelTest(ModelTest):
 
         assert a1.balance == a1_exp_balance and a2.balance == a2_exp_balance, "Balances not updated correctly."
 
+    @print_test_name
+    def test_rollback_transaction(self):
+        account1 = Account.add_account("Account1", "checking")
+        account2 = Account.add_account("Account2", "savings")
+
+        # Only need one category
+        test_category = "test"
+        Category.add_category(test_category)
+
+        # TODO: test duplicate transactions
+        transactions1 = [
+            (datetime.date(2015, 1, 1), "place #1", 100, "debit", test_category),
+            (datetime.date(2016, 2, 3), "place #2", 10, "credit", test_category),
+            (datetime.date(2015, 1, 1), "place #3", 100, "debit", test_category),
+        ]
+        a1_exp_balance = -100 + 10 - 100
+
+        transactions2 = [
+            (datetime.date(2015, 3, 1), "place #3", 30, "debit", test_category),
+            (datetime.date(2016, 4, 3), "place #4", 20, "credit", test_category),
+        ]
+        a2_exp_balance = -30 + 20
+
+        added_tx1 = []
+        for tx in transactions1:
+            added_tx1.append(account1.add_transaction(*tx))
+
+        added_tx2 = []
+        for tx in transactions2:
+            added_tx2.append(account2.add_transaction(*tx))
+
+        a1 = Account.get_by_id(account1.id)
+        a2 = Account.get_by_id(account2.id)
+
+        assert a1.balance == a1_exp_balance and a2.balance == a2_exp_balance, "Balances not updated correctly."
+
+        account1.remove_transaction(added_tx1[0])
+        assert account1.balance == a1_exp_balance + 100 and account2.balance == a2_exp_balance,\
+            "Rollback balance not calculated correctly"
+
+        account1.remove_transaction(added_tx1[1])
+        assert account1.balance == a1_exp_balance + 100 - 10 and account2.balance == a2_exp_balance, \
+            "Rollback balance w/ credit not calculated correctly"
+
+        try:
+            account1.remove_transaction(added_tx2[0])
+            assert False, "Removed transaction that wasn't part of the account"
+        except AccountException as e:
+            pass
+
+        try:
+            account1.remove_transaction(added_tx1[0])
+            assert False, "Removed transaction that was already removed."
+        except AccountException as e:
+            pass
 
 
+# TODO: transaction object tests.
 
 
 
