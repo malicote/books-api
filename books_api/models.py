@@ -63,6 +63,14 @@ class Category(db.Model):
             db.session.commit()
 
     @staticmethod
+    def add_categories(category_descriptions):
+        for category in category_descriptions:
+            if not Category.is_category(category):
+                db.session.add(Category(category=category))
+                # Add logic handling here.
+                db.session.commit()
+
+    @staticmethod
     def get_all_categories():
         """
         :return: All categories as list of strings
@@ -106,6 +114,7 @@ class Account(db.Model):
         new_account = Account(description=description, balance=0, type=type)
         db.session.add(new_account)
         db.session.commit()
+        # TODO: catch existing account
         return new_account
 
     @staticmethod
@@ -119,7 +128,15 @@ class Account(db.Model):
 
     @staticmethod
     def get_by_id(id):
-        return Account.query.filter_by(id=id).first()
+        return Account.query.get(id)
+
+    def as_dict(self):
+        return {
+            "id": self.id,
+            "description": self.description,
+            "balance": self.balance,
+            "type": self.type,
+        }
 
     def __update_balance_by(self, amount, transaction_type):
         # TODO ensure this is OK

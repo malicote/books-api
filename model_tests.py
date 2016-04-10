@@ -365,11 +365,5 @@ class AccountModelTest(ModelTest):
             pass
 
 
-# TODO: transaction object tests.
-
-
-
-
-
 if __name__ == "__main__":
     unittest.main()
