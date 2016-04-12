@@ -4,7 +4,7 @@ import os
 import datetime
 import unittest
 
-import sqlalchemy.exc as db_exceptions
+import sqlalchemy.exc
 
 from books_api import app, db
 from books_api.models import Category, Account, Transaction, AccountException
@@ -76,7 +76,7 @@ class CategoryModelTest(ModelTest):
         try:
             db.session.commit()
             assert False, "Failed to catch duplication of '{}' in Category entry.".format(duplicate_category)
-        except db_exceptions.SQLAlchemyError as e:
+        except sqlalchemy.exc.IntegrityError as e:
             pass
 
     @print_test_name
@@ -176,7 +176,7 @@ class AccountModelTest(ModelTest):
         try:
             added_account = Account.add_account(description=acct_name, type=acct_type)
             assert False, "Added account that already existed?"
-        except db_exceptions.SQLAlchemyError as e:
+        except AccountException as e:
             pass
 
     @print_test_name

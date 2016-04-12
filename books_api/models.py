@@ -1,5 +1,7 @@
 import sys
 
+import sqlalchemy.exc
+
 from books_api import db
 from books_api import app
 
@@ -20,11 +22,12 @@ transaction_types = [
 
 # TODO: better exception handling capabilities
 
-class GenericAccountingException(Exception):
+
+class GenericBooksException(Exception):
     pass
 
 
-class CategoryException(GenericAccountingException):
+class CategoryException(GenericBooksException):
     pass
 
 
@@ -32,11 +35,11 @@ class CategoryNotFoundException(CategoryException):
     pass
 
 
-class AccountException(GenericAccountingException):
+class AccountException(GenericBooksException):
     pass
 
 
-class TransactionException(GenericAccountingException):
+class TransactionException(GenericBooksException):
     pass
 
 
@@ -60,15 +63,23 @@ class Category(db.Model):
         if not Category.is_category(category_description):
             db.session.add(Category(category=category_description))
             # Add logic handling here.
-            db.session.commit()
+            try:
+                db.session.commit()
+            except sqlalchemy.exc.SQLAlchemyError as e:
+                print("add_category error: {}".format(e))
+                raise GenericBooksException("Internal Error.")
 
     @staticmethod
     def add_categories(category_descriptions):
         for category in category_descriptions:
             if not Category.is_category(category):
                 db.session.add(Category(category=category))
-                # Add logic handling here.
-                db.session.commit()
+
+        try:
+            db.session.commit()
+        except sqlalchemy.exc.IntegrityError as e:
+            print("add_category error: {}".format(e))
+            raise CategoryException("Category already exists.")
 
     @staticmethod
     def get_all_categories():
@@ -106,15 +117,20 @@ class Account(db.Model):
     def add_account(description, type):
         type = type.lower()
         if not description or type not in account_types:
-            print("Error: empty description or '{}' not in '{}'".format(type, account_types))
-            # TODO how to add account types?
-            # TODO raise exception
-            return None
+            print("add_account error: empty description or '{}' not in '{}'".format(type, account_types))
+            raise AccountException("Missing description or account type.")
 
         new_account = Account(description=description, balance=0, type=type)
         db.session.add(new_account)
-        db.session.commit()
-        # TODO: catch existing account
+        try:
+            db.session.commit()
+        except sqlalchemy.exc.IntegrityError as e:
+            print("add_account error: {}".format(e))
+            raise AccountException("Account already exists.")
+        except sqlalchemy.exc.SQLAlchemyError as e:
+            print("add_account error: {}".format(e))
+            raise GenericBooksException("Internal error.")
+
         return new_account
 
     @staticmethod
