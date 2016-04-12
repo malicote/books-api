@@ -28,6 +28,20 @@ def add_account(description, type):
     return r.status_code, r.json()
 
 
+def get_categories():
+    r = requests.get(base_url + "/categories")
+    return r.status_code, r.json()
+
+
+def add_categories(categories):
+    new_categories = {
+        "categories": [c for c in categories]
+    }
+
+    r = requests.put(base_url + "/categories", json=new_categories)
+    return r.status_code, r.json()
+
+
 if __name__ == "__main__":
     print("Listing all accounts:")
     accounts = get_accounts()
@@ -46,3 +60,15 @@ if __name__ == "__main__":
         print("Account {}:\n{}".format(account['id'], json.dumps(get_account(account['id']), indent=4)))
 
     print("Account #100:\n{}".format(json.dumps(get_account(100), indent=4)))
+
+    code, categories = get_categories()
+    print("Categories ({}): {}".format(code, json.dumps(categories, indent=4)))
+
+    new_categories_1 = ["dining", "bills"]
+    new_categories_2 = ["rent", "grocery"]
+
+    code, response = add_categories(new_categories_1)
+    print("Response after adding categories ({}): {}".format(code, json.dumps(response, indent=4)))
+
+    code, categories = get_categories()
+    print("Reading back categories ({}): {}".format(code, json.dumps(categories, indent=4)))

@@ -7,7 +7,7 @@ from flask import Flask, jsonify, request, url_for, make_response, abort
 
 from books_api import app, db
 from .models import Category, Account, Transaction
-from .models import GenericBooksException, AccountException
+from .models import GenericBooksException, AccountException, CategoryException
 
 # TODO: auth
 
@@ -15,6 +15,38 @@ from .models import GenericBooksException, AccountException
 def add_public_uri_to_account(account_dict):
     account_dict['uri'] = url_for('get_account', id=account_dict['id'])
     return account_dict
+
+
+@app.route("/categories", methods=['GET'])
+def get_categories():
+    return jsonify({
+        'categories': Category.get_all_categories()
+    })
+
+@app.route('/categories', methods=['PUT'])
+def add_categories():
+    """
+    Expects format:
+    {
+        "categories": [
+            "new_category1",
+            "new_category2",
+            ...
+        ]
+    """
+    if not request.json or "categories" not in request.json:
+        abort(400, "New categories must contain list of categories.")
+
+    new_categories = request.json.get('categories')
+    try:
+        Category.add_categories(new_categories)
+    except CategoryException as e:
+        print("add_categories error: {}".format(e))
+        abort(500, "Internal error")
+
+    return jsonify({
+        'categories': new_categories
+    })
 
 
 @app.route("/accounts", methods=['GET'])
@@ -46,7 +78,19 @@ def get_account(id):
 
 @app.route("/accounts/<int:id>/summary", methods=['GET'])
 def get_account_summary(id):
+    abort(404, "Not implemented.")
+
+
+@app.route("/accounts/<int:id>/transactions", methods=['GET'])
+def get_account_transactions(id):
     account = Account.get_by_id(id)
+    if not account:
+        abort(404, "Account does not exist.")
+
+    transactions = account.get_transactions()
+    return jsonify({
+        "transactions": [transaction.as_dict() for transaction in transactions]
+    })
 
 
 @app.route("/accounts", methods=['PUT'])

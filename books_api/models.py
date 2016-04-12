@@ -47,7 +47,7 @@ class TransactionException(GenericBooksException):
 # todo: possible allow no categoies (none)
 class Category(db.Model):
     id = db.Column(db.Integer, primary_key=True)
-    category = db.Column(db.String(64), unique=True)
+    category = db.Column(db.String(64), unique=True, nullable=False, index=True)
     transactions = db.relationship('Transaction', backref='category_info', lazy='dynamic')
 
     def __repr__(self):
@@ -62,24 +62,28 @@ class Category(db.Model):
     def add_category(category_description):
         if not Category.is_category(category_description):
             db.session.add(Category(category=category_description))
+
             # Add logic handling here.
             try:
                 db.session.commit()
             except sqlalchemy.exc.SQLAlchemyError as e:
                 print("add_category error: {}".format(e))
+                db.session.rollback()
                 raise GenericBooksException("Internal Error.")
 
     @staticmethod
     def add_categories(category_descriptions):
         for category in category_descriptions:
-            if not Category.is_category(category):
-                db.session.add(Category(category=category))
-
-        try:
-            db.session.commit()
-        except sqlalchemy.exc.IntegrityError as e:
-            print("add_category error: {}".format(e))
-            raise CategoryException("Category already exists.")
+            # We commit after every addition since we don't
+            # want to rollback the entire thing (no adverse effects
+            # from adding categories more than once.  No-one will be
+            # adding categories at a high rate anyways.
+            # This also prevents the auto-flush from affecting our
+            # guard query above.
+            try:
+                Category.add_category(category)
+            except GenericBooksException as e:
+                pass
 
     @staticmethod
     def get_all_categories():
@@ -277,6 +281,16 @@ class Transaction(db.Model):
         db.session.delete(self)
         db.session.commit()
 
+    def as_dict(self):
+        return {
+            'id': self.id,
+            'account_id': self.account_id,
+            'description': description,
+            'amount': self.amount,
+            'type': self.type,
+            'category': self.category,
+            'date': str(self.date)
+        }
 
     def __repr__(self):
         return "<Transaction id: {}, account_id: {}, description: '{}'," \
