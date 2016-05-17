@@ -36,6 +36,29 @@ def db_add_all(items):
         db.session.add(item)
     db.session.commit()
 
+def db_add_accounts(desc_type_pairs):
+    accts = []
+    for desc, type in desc_type_pairs:
+        acct = Account(description=desc, type=type)
+        accts.append(acct)
+
+    db_add_all(accts)
+
+    return accts
+
+def db_add_transactions(account, transaction_tuples):
+    # [(datetime.date(2015, 1, 1), "place #1", 100, "debit", test_category), ...]
+    tx_list = []
+    for tx in transaction_tuples:
+        transaction = account.add_transaction(*tx)
+        tx_list.append(transaction)
+        db.session.add(transaction)
+
+    db.session.add(account)
+    db.session.commit()
+
+    return tx_list
+
 
 class ModelTest(unittest.TestCase):
     def setUp(self):
@@ -90,11 +113,6 @@ class CategoryModelTest(ModelTest):
         if not Category.is_category(categories[0]):
             assert False, "is_category returned False for '{}'".format(categories[0])
 
-    @print_test_name
-    def test_add_category(self):
-        Category.add_category('money')
-        if not Category.is_category('money'):
-            assert False, "add_category failed to add 'money'"
 
     @print_test_name
     def test_get_all_categories(self):
@@ -112,30 +130,18 @@ class CategoryModelTest(ModelTest):
         categories = self.__class__.categories
         add_categories(categories)
 
-        account = Account.add_account('Wells Fargo', 'checking')
-        account.add_transaction(
-            description='Grocery_store #1',
-            amount='100',
-            date=datetime.date(2015, 12, 31),
-            type='debit',
-            category='grocery'
-        )
+        account, = db_add_accounts([('Wells Fargo', 'checking')])
+        transactions2 = [
+            account.add_transaction(datetime.date(2015, 3, 1), "place #3", 30, "debit", 'grocery'),
+            account.add_transaction(datetime.date(2016, 4, 3), "place #4", 20, "credit", 'grocery'),
+            account.add_transaction(datetime.date(2016, 3, 3), "place #5", 21, "credit", 'gas'),
+        ]
 
-        account.add_transaction(
-            description='Grocery_story #2',
-            amount='150',
-            date=datetime.date(2016, 3, 30),
-            type='credit',
-            category='grocery'
-        )
+        db.session.add(account)
+        for tx in transactions2:
+            db.session.add(tx)
 
-        account.add_transaction(
-            description='Gas Station #1',
-            amount='20',
-            date=datetime.date(2015, 2, 10),
-            type='credit',
-            category='gas'
-        )
+        db.session.commit()
 
         grocery_category = Category(category='grocery')
         assert len(grocery_category.get_transactions()) == 2, "Incorrect number of transactions"
@@ -166,34 +172,43 @@ class AccountModelTest(ModelTest):
         acct_name = "Wells Fargo"
         acct_type = "Checking"
 
-        added_account = Account.add_account(description=acct_name, type=acct_type)
-        assert added_account is not None
+        db.session.add(Account(description=acct_name, type=acct_type))
+        db.session.commit()
 
         acct = Account.query.filter_by(description=acct_name).first()
+
+        print acct_name
+        print acct_type
+        print acct
 
         assert acct.description == acct_name and acct.type == acct_type.lower()
 
         try:
-            added_account = Account.add_account(description=acct_name, type=acct_type)
+            db.session.add(Account(description=acct_name, type=acct_type))
+            db.session.commit()
             assert False, "Added account that already existed?"
-        except AccountException as e:
+        except sqlalchemy.exc.IntegrityError as e:
             pass
 
     @print_test_name
     def test_get_all_accounts(self):
-        Account.add_account("Account1", "checking")
-        Account.add_account("Account2", "credit card")
-        Account.add_account("Account3", "savings")
+        db.session.add(Account(description="Account1", type="checking"))
+        db.session.add(Account(description="Account2", type="credit card"))
+        db.session.add(Account(description="Account3", type="savings"))
+        db.session.commit()
 
         accounts = Account.get_all()
 
         assert len(accounts) == 3, "Did not list all available accounts"
 
+
     @print_test_name
     def test_get_by_name(self):
-        Account.add_account("Account1", "checking")
-        Account.add_account("Account2", "credit card")
-        Account.add_account("Account3", "savings")
+        db_add_accounts([
+            ("Account1", "checking"),
+            ("Account2", "credit card"),
+            ("Account3", "savings"),
+        ])
 
         account_1 = Account.get_by_name("Account1")
 
@@ -210,9 +225,11 @@ class AccountModelTest(ModelTest):
 
     @print_test_name
     def test_get_by_id(self):
-        a1 = Account.add_account("Account1", "checking")
-        a2 = Account.add_account("Account2", "credit card")
-        a3 = Account.add_account("Account3", "savings")
+        a1, a2, a3 = db_add_accounts([
+            ("Account1", "checking"),
+            ("Account2", "credit card"),
+            ("Account3", "savings"),
+        ])
 
         account_1 = Account.get_by_id(a1.id)
 
@@ -231,12 +248,14 @@ class AccountModelTest(ModelTest):
 
     @print_test_name
     def test_basic_add_transaction(self):
-        account1 = Account.add_account("Account1", "checking")
-        account2 = Account.add_account("Account2", "savings")
+        account1, account2 = db_add_accounts([
+            ("Account1", "checking"),
+            ("Account2", "savings"),
+        ])
 
         # Only need one category
         test_category = "test"
-        Category.add_category(test_category)
+        add_categories([test_category])
 
         """
             def add_transaction(self, date, description, amount, type, category):
@@ -264,23 +283,22 @@ class AccountModelTest(ModelTest):
             (datetime.date(2016, 4, 3), "place #4", 20, "credit", test_category),
         ]
 
-        for tx in transactions1:
-            account1.add_transaction(*tx)
-
-        for tx in transactions2:
-            account2.add_transaction(*tx)
+        db_add_transactions(account1, transactions1)
+        db_add_transactions(account2, transactions2)
 
         assert len(account1.get_transactions()) == len(transactions1), "Failed to add transactions to account1"
         assert len(account2.get_transactions()) == len(transactions2), "Failed to add transactions to account2"
 
     @print_test_name
     def test_add_transaction_with_balance(self):
-        account1 = Account.add_account("Account1", "checking")
-        account2 = Account.add_account("Account2", "savings")
+        account1, account2 = db_add_accounts([
+            ("Account1", "checking"),
+            ("Account2", "savings"),
+        ])
 
         # Only need one category
         test_category = "test"
-        Category.add_category(test_category)
+        add_categories([test_category])
 
         # TODO: test duplicate transactions
         transactions1 = [
@@ -310,12 +328,14 @@ class AccountModelTest(ModelTest):
 
     @print_test_name
     def test_rollback_transaction(self):
-        account1 = Account.add_account("Account1", "checking")
-        account2 = Account.add_account("Account2", "savings")
+        account1, account2 = db_add_accounts([
+            ("Account1", "checking"),
+            ("Account2", "savings"),
+        ])
 
         # Only need one category
         test_category = "test"
-        Category.add_category(test_category)
+        add_categories([test_category])
 
         # TODO: test duplicate transactions
         transactions1 = [
@@ -331,35 +351,40 @@ class AccountModelTest(ModelTest):
         ]
         a2_exp_balance = -30 + 20
 
-        added_tx1 = []
-        for tx in transactions1:
-            added_tx1.append(account1.add_transaction(*tx))
-
-        added_tx2 = []
-        for tx in transactions2:
-            added_tx2.append(account2.add_transaction(*tx))
+        added_tx1 = db_add_transactions(account1, transactions1)
+        added_tx2 = db_add_transactions(account2, transactions2)
 
         a1 = Account.get_by_id(account1.id)
         a2 = Account.get_by_id(account2.id)
 
         assert a1.balance == a1_exp_balance and a2.balance == a2_exp_balance, "Balances not updated correctly."
 
-        account1.remove_transaction(added_tx1[0])
+        removed_transaction = account1.remove_transaction(added_tx1[0])
+        db.session.add(account1)
+        db.session.delete(removed_transaction)
+        db.session.commit()
+
+        db.session.refresh(account1)
         assert account1.balance == a1_exp_balance + 100 and account2.balance == a2_exp_balance,\
             "Rollback balance not calculated correctly"
 
-        account1.remove_transaction(added_tx1[1])
+        removed_transaction = account1.remove_transaction(added_tx1[1])
+        db.session.add(account1)
+        db.session.delete(removed_transaction)
+        db.session.commit()
+
+        db.session.refresh(account1)
         assert account1.balance == a1_exp_balance + 100 - 10 and account2.balance == a2_exp_balance, \
             "Rollback balance w/ credit not calculated correctly"
 
         try:
-            account1.remove_transaction(added_tx2[0])
+            _ = account1.remove_transaction(added_tx2[0])
             assert False, "Removed transaction that wasn't part of the account"
         except AccountException as e:
             pass
 
         try:
-            account1.remove_transaction(added_tx1[0])
+            _ = account1.remove_transaction(added_tx1[0])
             assert False, "Removed transaction that was already removed."
         except AccountException as e:
             pass

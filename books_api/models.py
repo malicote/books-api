@@ -59,33 +59,6 @@ class Category(db.Model):
         return Category.query.filter_by(category=category).first() is not None
 
     @staticmethod
-    def add_category(category_description):
-        if not Category.is_category(category_description):
-            db.session.add(Category(category=category_description))
-
-            # Add logic handling here.
-            try:
-                db.session.commit()
-            except sqlalchemy.exc.SQLAlchemyError as e:
-                print("add_category error: {}".format(e))
-                db.session.rollback()
-                raise GenericBooksException("Internal Error.")
-
-    @staticmethod
-    def add_categories(category_descriptions):
-        for category in category_descriptions:
-            # We commit after every addition since we don't
-            # want to rollback the entire thing (no adverse effects
-            # from adding categories more than once.  No-one will be
-            # adding categories at a high rate anyways.
-            # This also prevents the auto-flush from affecting our
-            # guard query above.
-            try:
-                Category.add_category(category)
-            except GenericBooksException as e:
-                pass
-
-    @staticmethod
     def get_all_categories():
         """
         :return: All categories as list of strings
@@ -117,25 +90,20 @@ class Account(db.Model):
 
     transactions = db.relationship('Transaction', backref='account_info', lazy='dynamic')
 
-    @staticmethod
-    def add_account(description, type):
-        type = type.lower()
-        if not description or type not in account_types:
+    def __init__(self, **kwargs):
+        description = kwargs.get('description', '')
+        type = kwargs.get('type', '')
+        if not description or not type:
             print("add_account error: empty description or '{}' not in '{}'".format(type, account_types))
             raise AccountException("Missing description or account type.")
 
-        new_account = Account(description=description, balance=0, type=type)
-        db.session.add(new_account)
-        try:
-            db.session.commit()
-        except sqlalchemy.exc.IntegrityError as e:
-            print("add_account error: {}".format(e))
-            raise AccountException("Account already exists.")
-        except sqlalchemy.exc.SQLAlchemyError as e:
-            print("add_account error: {}".format(e))
-            raise GenericBooksException("Internal error.")
+        # Save type as lower case only
+        kwargs['type'] = kwargs['type'].lower()
 
-        return new_account
+        if 'balance' not in kwargs:
+            kwargs['balance'] = 0
+
+        super(Account, self).__init__(**kwargs)
 
     @staticmethod
     def get_all():
@@ -163,10 +131,9 @@ class Account(db.Model):
         self.balance = self.balance + amount if transaction_type == "credit"\
             else self.balance - amount
 
-        db.session.commit()
-
     def add_transaction(self, date, description, amount, type, category):
         # TODO: how to ensure data is a datetime object, or ensure it can be?
+        # Caller is required to call the returned object and the self object
         """
         :param date: Datetime object
         :param description: Description of transaction
@@ -176,7 +143,7 @@ class Account(db.Model):
         :return: Transaction added
         """
         amount = int(amount)
-        new_transaction = Transaction.add_transaction(
+        new_transaction = Transaction(
             account_id=self.id,
             description=description,
             amount=amount,
@@ -187,7 +154,6 @@ class Account(db.Model):
 
         self.__update_balance_by(amount, type)
 
-        # TODO-ASAP: catch exception & roll back if needed
         return new_transaction
 
     def get_transactions(self):
@@ -200,6 +166,7 @@ class Account(db.Model):
     def remove_transaction(self, transaction):
         """
         Roll back transaction for this account.
+        Caller is required to add account & remove transaction database session
         :param transaction: Valid transaction object w/ id.
         :return: Raise Exception if id isn't found for this account.
         """
@@ -218,8 +185,7 @@ class Account(db.Model):
 
         self.__update_balance_by(-record.amount, record.type)
 
-        # Todo: catch exception
-        record.remove()
+        return record
 
     def __repr__(self):
         return "<Account id: {}, description: '{}', balance: {}, type: {} >".format(
@@ -237,22 +203,6 @@ class Transaction(db.Model):
 
     category = db.Column(db.String(64), db.ForeignKey('category.category'))
     date = db.Column(db.Date, nullable=False)
-
-    @staticmethod
-    def add_transaction(account_id, description, date, amount, type, category):
-        new_transaction = Transaction(
-            account_id=account_id,
-            description=description,
-            amount=amount,
-            type=type,
-            date=date,
-            category=category
-        )
-
-        db.session.add(new_transaction)
-        db.session.commit()
-        # TODO: catch exception
-        return new_transaction
 
     @staticmethod
     def get_transactions(transaction_id=None,
@@ -276,10 +226,6 @@ class Transaction(db.Model):
             t = t.filter_by(category=category)
 
         return t.order_by(Transaction.date.desc()).all()
-
-    def remove(self):
-        db.session.delete(self)
-        db.session.commit()
 
     def as_dict(self):
         return {

@@ -5,6 +5,8 @@ import datetime
 
 from flask import Flask, jsonify, request, url_for, make_response, abort
 
+import sqlalchemy.exc
+
 from books_api import app, db
 from .models import Category, Account, Transaction
 from .models import GenericBooksException, AccountException, CategoryException
@@ -38,10 +40,14 @@ def add_categories():
         abort(400, "New categories must contain list of categories.")
 
     new_categories = request.json.get('categories')
+    for new_category in [c for c in new_categories if not Category.is_category(c)]:
+        db.session.add(Category(category=new_category))
+
     try:
-        Category.add_categories(new_categories)
-    except CategoryException as e:
-        print("add_categories error: {}".format(e))
+        db.session.commit()
+    except sqlalchemy.exc.SQLAlchemyError as e:
+        print("add_category error: {}".format(e))
+        db.session.rollback()
         abort(500, "Internal error")
 
     return jsonify({
@@ -103,12 +109,14 @@ def add_account():
 
     # TODO: handle bad input
     try:
-        new_account = Account.add_account(request.json['description'],
-                                          request.json['type'])
+        new_account = Account(description=request.json['description'],
+                              type=request.json['type'])
+        db.session.add(new_account)
+        db.session.commit()
     except AccountException as e:
-        abort(409, "Account already exists")
-    except GenericBooksException as e:
-        abort(500, "Internal error")
+        abort(400, e)
+    except sqlalchemy.exc.IntegrityError as e:
+        abort(409, "Account already exists.")
 
     print("Added new account: {}".format(new_account))
     return jsonify(new_account.as_dict())
