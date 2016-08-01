@@ -99,6 +99,34 @@ def get_account_transactions(id):
     })
 
 
+@app.route("/accounts/<int:id>/transactions", methods=['PUT'])
+def add_account_transaction(id):
+    if not request.json:
+        abort(400, "Invalid request format.")
+
+    try:
+        date = request.json['date']
+        description = request.json['description']
+        amount = request.json['amount']
+        type = request.json['type']
+        category = request.json['category']
+    except KeyError as e:
+        abort(400, "Transaction must contain date, description, amount, type, and category")
+
+    account = Account.get_by_id(id)
+    if not account:
+        abort(404, "Account does not exist.")
+
+    try:
+        new_transaction = account.add_transaction()
+        db.session.add(new_transaction)
+        db.session.commit()
+    except Exception as e:
+        # TODO: move to sqlalchemy specific exception
+        abort(500, "Error adding transaction")
+
+
+
 @app.route("/accounts", methods=['PUT'])
 def add_account():
     if not request.json:
@@ -109,8 +137,12 @@ def add_account():
 
     # TODO: handle bad input
     try:
-        new_account = Account(description=request.json['description'],
-                              type=request.json['type'])
+        description = request.json['description']
+        type = request.json['type']
+        balance = request.json['balance']
+        new_account = Account(description=description,
+                              type=type, balance=balance)
+
         db.session.add(new_account)
         db.session.commit()
     except AccountException as e:

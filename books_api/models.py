@@ -132,7 +132,8 @@ class Account(db.Model):
             else self.balance - amount
 
     def add_transaction(self, date, description, amount, type, category):
-        # TODO: how to ensure data is a datetime object, or ensure it can be?
+        # TODO: how to ensure date is a datetime object, or ensure it can be?
+        # TODO: determine if amount isn't int
         # Caller is required to call the returned object and the self object
         """
         :param date: Datetime object
@@ -231,11 +232,11 @@ class Transaction(db.Model):
         return {
             'id': self.id,
             'account_id': self.account_id,
-            'description': description,
+            'description': self.description,
             'amount': self.amount,
             'type': self.type,
             'category': self.category,
-            'date': str(self.date)
+            'date': str(self.date),
         }
 
     def __repr__(self):
