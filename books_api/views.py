@@ -105,7 +105,9 @@ def add_account_transaction(id):
         abort(400, "Invalid request format.")
 
     try:
-        date = request.json['date']
+        # TODO: fix formatting
+        format = "%d/%m/%Y %H:%M:%S"
+        date = datetime.datetime.strptime(request.json['date'], format)
         description = request.json['description']
         amount = request.json['amount']
         type = request.json['type']
@@ -118,14 +120,23 @@ def add_account_transaction(id):
         abort(404, "Account does not exist.")
 
     try:
-        new_transaction = account.add_transaction()
+        new_transaction = account.add_transaction(
+            date=date,
+            description=description,
+            amount=amount,
+            type=type,
+            category=category,
+        )
         db.session.add(new_transaction)
         db.session.commit()
     except Exception as e:
         # TODO: move to sqlalchemy specific exception
-        abort(500, "Error adding transaction")
+        abort(500, "Error adding transaction: {}".format(e))
 
 
+    return jsonify({
+        'transaction': new_transaction.as_dict()
+    })
 
 @app.route("/accounts", methods=['PUT'])
 def add_account():

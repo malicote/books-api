@@ -3,6 +3,7 @@
 import sys
 import requests
 import json
+import datetime
 
 base_url = "http://localhost:5000"
 
@@ -11,7 +12,12 @@ class BooksAPIException(Exception):
     pass
 
 
-# TODO: develop proper client
+""" TODO:
+    - Handle lack of JSON in response.
+"""
+
+
+
 class Book(object):
     """ Actions:
         - connect to specific book
@@ -30,10 +36,10 @@ class Book(object):
         :param uri: /<uri> of the endpoint
         :return: base + uri
         """
-        return self.endpoint + "/" + "/".join(args)
+        return self.endpoint + "/".join(args)
 
     def get_accounts(self):
-        r = requests.get(self.__url('accounts'))
+        r = requests.get(self.__url('/accounts'))
         resp = r.json()
 
         if r.status_code != 200:
@@ -43,7 +49,7 @@ class Book(object):
 
         # TODO: what if 'accounts' not in resp?
 
-        return [Account(**a) for a in resp['accounts']]
+        return resp['accounts']
 
     def add_account(self, description, type, initial_balance=0):
         new_account = {
@@ -52,15 +58,72 @@ class Book(object):
             "balance": initial_balance,
         }
 
-        r = requests.put(self.__url("accounts"), json=new_account)
+        r = requests.put(self.__url("/accounts"), json=new_account)
 
         if r.status_code != 200:
             raise BooksAPIException("Failed to add account {} [{}]: {}".format(
                 description, r.status_code, r.json())
             )
 
+    @staticmethod
+    def acct_to_str(account):
+        return "Account {} -- Desc: '{}' ({}) -- Balance: {}".format(
+            account['id'],
+            account['description'],
+            account['type'],
+            account['balance'],
+        )
+
+    def add_transaction_to_account(self, account, transaction):
+        """
+        :param account: account dict, must contain info returned
+        from get_account
+        :param transaction: transaction dict.  must contain:
+            date - date of transaction
+            description
+            amount - in cents
+            type - credit or debit
+            category
+        :return:
+            Throws BooksAPIException on error
+        """
+        tx_fields = ['date', 'description', 'amount', 'type', 'category']
+
+        try:
+            request_body = {}
+
+            for field in tx_fields:
+                request_body[field] = transaction[field]
+
+        except KeyError as e:
+            raise BooksAPIException("Transaction missing info: {}".format(e))
+
+
+        uri = self.__url(account['uri'], 'transactions')
+        r = requests.put(uri, json=request_body)
+        if r.status_code != 200:
+            raise BooksAPIException("Failed to transaction '{}' to account {} [{}]: {}".format(
+                request_body['description'], account['description'], r.status_code, r.json())
+            )
+
+        return r.json()['transaction']
+
+    def get_transactions_for_account(self, account):
+        uri = self.__url(account['uri'], 'transactions')
+        r = requests.get(uri)
+        if r.status_code != 200:
+            raise BooksAPIException("Failed to get transactions for account {} [{}]: {}".format(
+                account['description'], r.status_code, r.json())
+            )
+
+        resp = r.json()
+
+        return resp['transactions']
+
+
+
     def get_categories(self):
-        r = requests.get(self.__url('categories'))
+        r = requests.get(self.__url('/categories'))
         resp = r.json()
 
         if r.status_code != 200:
@@ -71,43 +134,6 @@ class Book(object):
 
         return resp['categories']
 
-
-
-class Account(object):
-    """ Actions:
-        - Get transactions
-        - Add transactions
-        - Remove transaction
-        - Get summary
-    """
-    def __init__(self, *args, **kwargs):
-        try:
-            self.id = kwargs['id']
-            self.description = kwargs['description']
-            self.balance = kwargs['balance']
-            self.type = kwargs['type']
-            self.uri = kwargs['uri']
-        except KeyError as e:
-            raise BooksAPIException("Missing info in Account: {}".format(
-                e
-            ))
-
-    def __repr__(self):
-        return "Account {} -- Desc: '{}' ({}) -- Balance: {}".format(
-            self.id, self.description, self.type, self.balance
-        )
-
-    def __str__(self):
-        return "Account {} -- Desc: '{}' ({}) -- Balance: {}".format(
-            self.id, self.description, self.type, self.balance
-        )
-
-
-class Transaction(object):
-    """ Actions:
-        - Data only?
-    """
-    pass
 
 
 def get_accounts():
@@ -150,8 +176,21 @@ def main():
     print "\n".join([str(a) for a in books_api.get_accounts()])
     print books_api.get_categories()
 
-    print books_api.add_account('CharlesSchwab', 'checking')
+    accounts = books_api.get_accounts()
+    acct1 = accounts[0]
 
+    transaction = {
+        "date": str(datetime.datetime.strftime(datetime.datetime.now(),
+                                               "%d/%m/%Y %H:%M:%S")),
+        "description": "gasoline",
+        "amount": 1065,
+        "type": 'debit',
+        "category": 'gasoline',
+    }
+
+    print books_api.add_transaction_to_account(acct1, transaction)
+
+    print "\n".format([t for t in books_api.get_transactions_for_account(acct1)])
     print "\n".join([str(a) for a in books_api.get_accounts()])
     sys.exit(0)
 
